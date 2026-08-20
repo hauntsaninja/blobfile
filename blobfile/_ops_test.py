@@ -1700,6 +1700,31 @@ def test_read_with_size(ctx):
             assert r.tell() == 1
 
 
+def test_azure_writer_preparation_failure_does_not_finalize():
+    ctx = bf.create_context(use_blind_writes=False)
+    failed_writers = []
+
+    def fail_prepare(writer):
+        failed_writers.append(writer)
+        raise RuntimeError("simulated preparation failure")
+
+    with (
+        unittest.mock.patch.object(azure.StreamingWriteFile, "_prepare_write", fail_prepare),
+        unittest.mock.patch.object(azure, "execute_api_request") as mock_exec,
+    ):
+        with pytest.raises(RuntimeError, match="simulated preparation failure"):
+            ctx.BlobFile(
+                "az://example/container/object.txt",
+                "wb",
+                streaming=True,
+                version='"fake-etag-1"',
+                partial_writes_on_exc=False,
+            )
+
+        failed_writers[0].close()
+        mock_exec.assert_not_called()
+
+
 def test_use_blind_writes_skips_uncommited_blocks_check():
     ctx = bf.create_context(use_blind_writes=True)
     path = f"https://{AS_TEST_ACCOUNT}.blob.core.windows.net/{AS_TEST_CONTAINER}/file"

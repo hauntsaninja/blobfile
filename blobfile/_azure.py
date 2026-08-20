@@ -1056,7 +1056,11 @@ class StreamingWriteFile(BaseStreamingWriteFile):
             partial_writes_on_exc=partial_writes_on_exc,
         )
         if not conf.use_blind_writes:
-            self._prepare_write()
+            try:
+                self._prepare_write()
+            except BaseException:
+                self.had_exception = True
+                raise
 
     def _prepare_write(self) -> None:
         # block blobs let you upload up to 100,000 "uncommitted" blocks with user-chosen block ids
