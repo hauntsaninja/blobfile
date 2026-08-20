@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.3.0
+
+* Use streaming writes in higher level APIs
+* Fix a case where `partial_writes_on_exc=False` did not take effect when a failure occurred while
+  preparing a write to an Azure file
+* Clean up accessTokens.json code path
+* Housekeeping changes
+
 ## 3.2.0
 
 * `BlobFile` now takes a `partial_writes_on_exc` argument, allowing you to ignore partial writes to remote files when exceptions are thrown
