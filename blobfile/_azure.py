@@ -1385,8 +1385,7 @@ def list_blobs(conf: Config, path: str, delimiter: str | None = None) -> Iterato
 
 
 def entry_from_dirpath(path: str) -> DirEntry:
-    if path.endswith("/"):
-        path = path[:-1]
+    path = path.removesuffix("/")
     _, _, obj = split_path(path)
     name = obj.split("/")[-1]
     return DirEntry(name=name, path=path, is_dir=True, is_file=False, stat=None)
@@ -1593,8 +1592,7 @@ def join_paths(conf: Config, url: str, relpath: str) -> str:
     if not blob.endswith("/"):
         blob += "/"
     blob = path_join(blob, relpath)
-    if blob.startswith("/"):
-        blob = blob[1:]
+    blob = blob.removeprefix("/")
     return combine_path(conf, account, container, blob)
 
 
