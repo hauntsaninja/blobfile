@@ -546,7 +546,7 @@ def execute_request(conf: Config, build_req: Callable[[], Request]) -> "urllib3.
             if deadline is not None:
                 if resp.headers.get("Transfer-Encoding") == "chunked":
                     # we don't support this, just read the body
-                    resp.data
+                    resp.data  # noqa: B018
                 else:
                     # read the data manually since it's hard to implement a deadline using urllib3
                     # this is all super hacky

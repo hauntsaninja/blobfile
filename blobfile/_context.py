@@ -55,7 +55,7 @@ from blobfile._common import (
 
 # https://cloud.google.com/storage/docs/naming
 # https://www.w3.org/TR/xml/#charsets
-INVALID_CHARS = set().union(range(0x0, 0x9)).union(range(0xB, 0xE)).union(range(0xE, 0x20))
+INVALID_CHARS = set().union(range(0x9)).union(range(0xB, 0xE)).union(range(0xE, 0x20))
 
 DEFAULT_AZURE_WRITE_CHUNK_SIZE = 8 * 2**20
 DEFAULT_GOOGLE_WRITE_CHUNK_SIZE = 8 * 2**20
@@ -1150,6 +1150,7 @@ def _parallel_download(
     if return_md5:
         with ctx.BlobFile(dst, "rb") as f:
             return binascii.hexlify(common.block_md5(f)).decode("utf8")
+    return None
 
 
 def _string_overlap(s1: str, s2: str) -> int:
