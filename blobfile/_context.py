@@ -1006,6 +1006,10 @@ class Context:
                         tmp_dir = tempfile.mkdtemp()
                         local_path = self.join(tmp_dir, local_filename)
                         self.copy(remote_path, local_path)
+                    elif _is_s3_path(path):
+                        if not _is_local_path(cache_dir):
+                            raise Error(f"cache_dir must be a local path: '{cache_dir}'")
+                        local_path = s3.cached_download(self._conf, path, cache_dir)
                     else:
                         if not _is_local_path(cache_dir):
                             raise Error(f"cache_dir must be a local path: '{cache_dir}'")
