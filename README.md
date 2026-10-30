@@ -134,6 +134,8 @@ To make local behavior consistent with the remote storage systems, missing local
 
 Use `s3://<bucket>/<key>` for objects in general-purpose buckets. Streaming writes use 8 MiB parts by default. Set `s3_write_chunk_size` between 5 MiB and 5 GiB when a file needs larger parts. An upload can contain up to 10,000 parts. S3 manages object modification times, so `set_mtime` is unsupported. Version-conditional opens and copies are also unsupported. S3 downloads support `copy(..., parallel=True)`. Local-to-S3 copies upload parts sequentially. The AWS SDK handles S3 connections and retries, using the configured connect and read timeouts.
 
+With `BlobFile(path, "rb", streaming=False, cache_dir=...)`, S3 cache entries are keyed by endpoint, bucket, object key, and ETag. Each open checks object metadata and reuses the cached file when the ETag is unchanged, including for multipart uploads whose ETags are not MD5 checksums. Downloads use `If-Match` on every request and publish the cache entry atomically after completion. If the object changes during a download, the open raises `VersionMismatch`; opening again checks the new version. This requires a service with reliable ETags and conditional reads, and does not verify cached bytes against a content checksum. The caller remains responsible for cleaning up old cache entries.
+
 ### Local
 
 These are just normal paths for the current machine, e.g. `/root/hello.txt`
