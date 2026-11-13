@@ -92,6 +92,12 @@ There are a few bonus functions:
     * `multiprocessing_start_method="spawn"`: the start method to use when creating processes for parallel work
 * `create_context` - (same arguments as `configure`), creates a new instance of `blobfile` with a custom configuration instead of modifying the global configuration
 
+### Download caching
+
+With `BlobFile(path, "rb", streaming=False, cache_dir=...)`, remote files share a cache keyed by object path and version: ETag for S3 and Azure, and generation for GCS. S3 cache identities also include the service endpoint. Each open checks metadata and reuses the cached file when the version is unchanged, including for multipart uploads and objects without an MD5 checksum. Downloads use conditional reads on every request and publish the cache entry atomically after completion. If a version precondition fails during a download, the open raises `VersionMismatch`; opening again checks the new version.
+
+Caching requires reliable version identifiers and conditional reads. It does not verify cached bytes against a content checksum or write MD5 metadata back to the remote object. Existing MD5-based cache entries are not reused, and the caller remains responsible for cleaning up old cache entries.
+
 ## Authentication
 
 ### Amazon S3
@@ -133,8 +139,6 @@ To make local behavior consistent with the remote storage systems, missing local
 ### Amazon S3
 
 Use `s3://<bucket>/<key>` for objects in general-purpose buckets. Streaming writes use 8 MiB parts by default. Set `s3_write_chunk_size` between 5 MiB and 5 GiB when a file needs larger parts. An upload can contain up to 10,000 parts. S3 manages object modification times, so `set_mtime` is unsupported. Version-conditional opens and copies are also unsupported. S3 downloads support `copy(..., parallel=True)`. Local-to-S3 copies upload parts sequentially. The AWS SDK handles S3 connections and retries, using the configured connect and read timeouts.
-
-With `BlobFile(path, "rb", streaming=False, cache_dir=...)`, S3 cache entries are keyed by endpoint, bucket, object key, and ETag. Each open checks object metadata and reuses the cached file when the ETag is unchanged, including for multipart uploads whose ETags are not MD5 checksums. Downloads use `If-Match` on every request and publish the cache entry atomically after completion. If the object changes during a download, the open raises `VersionMismatch`; opening again checks the new version. This requires a service with reliable ETags and conditional reads, and does not verify cached bytes against a content checksum. The caller remains responsible for cleaning up old cache entries.
 
 ### Local
 

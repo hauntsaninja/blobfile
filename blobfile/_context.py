@@ -8,6 +8,7 @@ import contextlib
 import hashlib
 import io
 import itertools
+import json
 import math
 import multiprocessing as mp
 import os
@@ -1006,62 +1007,50 @@ class Context:
                         tmp_dir = tempfile.mkdtemp()
                         local_path = self.join(tmp_dir, local_filename)
                         self.copy(remote_path, local_path)
-                    elif _is_s3_path(path):
-                        if not _is_local_path(cache_dir):
-                            raise Error(f"cache_dir must be a local path: '{cache_dir}'")
-                        local_path = s3.cached_download(self._conf, path, cache_dir)
                     else:
                         if not _is_local_path(cache_dir):
                             raise Error(f"cache_dir must be a local path: '{cache_dir}'")
                         self.makedirs(cache_dir)
-                        path_md5 = hashlib.md5(path.encode("utf8")).hexdigest()
-                        lock_path = self.join(cache_dir, f"{path_md5}.lock")
-                        tmp_path = self.join(cache_dir, f"{path_md5}.tmp")
+                        identity = [_normalize_path(self._conf, path)]
+                        if _is_s3_path(path):
+                            identity.append(s3.endpoint_url(self._conf))
+                        path_hash = hashlib.sha256(json.dumps(identity).encode("utf8")).hexdigest()
+                        lock_path = self.join(cache_dir, f"{path_hash}.lock")
                         with filelock.FileLock(lock_path):
                             st = self.stat(path)
                             assert st.version is not None
-                            remote_version = st.version
-                            remote_hash = st.md5
-
-                            perform_copy = False
-                            if remote_hash is None:
-                                # there is no remote md5, copy the file
-                                # and attempt to update the md5
-                                perform_copy = True
-                            else:
-                                expected_local_path = self.join(
-                                    cache_dir, remote_hash, local_filename
-                                )
-                                perform_copy = not self.exists(expected_local_path)
-
-                            if perform_copy:
-                                local_hexdigest = self.copy(
-                                    remote_path, tmp_path, overwrite=True, return_md5=True
-                                )
-                                assert local_hexdigest is not None, "failed to return md5"
-                                # the file we downloaded may not match the remote file because
-                                # the remote file changed while we were downloading it
-                                # in this case make sure we don't cache it under the wrong md5
-                                local_path = self.join(cache_dir, local_hexdigest, local_filename)
+                            # Versions identify an object, not its content checksum. Include
+                            # the path so unrelated objects with the same version cannot alias.
+                            version_hash = hashlib.sha256(
+                                json.dumps([*identity, st.version]).encode("utf8")
+                            ).hexdigest()
+                            local_path = self.join(cache_dir, version_hash, local_filename)
+                            if not os.path.exists(local_path):
                                 os.makedirs(self.dirname(local_path), exist_ok=True)
-                                if os.path.exists(local_path):
-                                    # the file is already here, nevermind
-                                    os.remove(tmp_path)
-                                else:
+                                with tempfile.TemporaryDirectory(dir=cache_dir) as download_dir:
+                                    tmp_path = self.join(download_dir, "download")
+                                    # Every request must read the version used for the cache key.
+                                    if _is_gcp_path(path):
+                                        reader = gcp.StreamingReadFile(
+                                            self._conf, path, size=st.size, version=st.version
+                                        )
+                                    elif _is_azure_path(path):
+                                        reader = azure.StreamingReadFile(
+                                            self._conf, path, size=st.size, version=st.version
+                                        )
+                                    else:
+                                        reader = s3.StreamingReadFile(
+                                            self._conf, path, size=st.size, etag=st.version
+                                        )
+                                    with (
+                                        io.BufferedReader(reader, buffer_size=buffer_size) as src,
+                                        open(tmp_path, "wb") as dst,
+                                    ):
+                                        shutil.copyfileobj(src, dst, length=CHUNK_SIZE)
+                                        if dst.tell() != st.size:
+                                            raise Error(f"Incomplete download: '{path}'")
+                                    # Only complete downloads become visible to cache readers.
                                     os.replace(tmp_path, local_path)
-
-                                if remote_hash is None:
-                                    if _is_azure_path(path):
-                                        azure.maybe_update_md5(
-                                            self._conf, path, remote_version, local_hexdigest
-                                        )
-                                    elif _is_gcp_path(path):
-                                        gcp.maybe_update_md5(
-                                            self._conf, path, remote_version, local_hexdigest
-                                        )
-                            else:
-                                assert remote_hash is not None
-                                local_path = self.join(cache_dir, remote_hash, local_filename)
                 else:
                     tmp_dir = tempfile.mkdtemp()
                     local_path = self.join(tmp_dir, local_filename)

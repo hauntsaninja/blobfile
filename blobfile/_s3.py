@@ -2,18 +2,13 @@
 
 from __future__ import annotations
 
-import hashlib
 import io
-import json
 import os
 import re
-import shutil
-import tempfile
 import time
 from functools import lru_cache
 from typing import Any, Callable, Iterator
 
-import filelock
 import urllib3
 
 from blobfile import _common as common
@@ -72,6 +67,10 @@ def _make_client(conf: Config, pid: int, region: str | None) -> Any:
 
 def _client(conf: Config, region: str | None = None) -> Any:
     return _make_client(conf, os.getpid(), region)
+
+
+def endpoint_url(conf: Config) -> str:
+    return _client(conf).meta.endpoint_url
 
 
 def _call(operation: Callable[..., Any], path: str, **kwargs: Any) -> Any:
@@ -181,39 +180,6 @@ def list_blobs(conf: Config, path: str, delimiter: str | None = None) -> Iterato
         if not page["IsTruncated"]:
             return
         params["ContinuationToken"] = page["NextContinuationToken"]
-
-
-def cached_download(conf: Config, path: str, cache_dir: str) -> str:
-    """Cache one object version without treating its ETag as a content checksum."""
-    client = _client(conf)
-    bucket, key = split_path(path)
-    identity = [client.meta.endpoint_url, bucket, key]
-    path_hash = hashlib.sha256(json.dumps(identity).encode("utf8")).hexdigest()
-    cache_root = os.path.join(cache_dir, "s3")
-    os.makedirs(cache_root, exist_ok=True)
-    with filelock.FileLock(os.path.join(cache_root, f"{path_hash}.lock")):
-        item = _call(client.head_object, path, Bucket=bucket, Key=key)
-        etag = item["ETag"]
-        version_hash = hashlib.sha256(json.dumps([*identity, etag]).encode("utf8")).hexdigest()
-        local_path = os.path.join(cache_root, version_hash, key.rpartition("/")[2] or "local.tmp")
-        if os.path.exists(local_path):
-            return local_path
-
-        os.makedirs(os.path.dirname(local_path), exist_ok=True)
-        with tempfile.TemporaryDirectory(dir=cache_root) as tmp_dir:
-            tmp_path = os.path.join(tmp_dir, "download")
-            with (
-                io.BufferedReader(
-                    StreamingReadFile(conf, path, size=item["ContentLength"], etag=etag)
-                ) as src,
-                open(tmp_path, "wb") as dst,
-            ):
-                shutil.copyfileobj(src, dst, length=common.CHUNK_SIZE)
-                if dst.tell() != item["ContentLength"]:
-                    raise Error(f"Incomplete S3 download: '{path}'")
-            # Only complete downloads become visible to subsequent cache readers.
-            os.replace(tmp_path, local_path)
-        return local_path
 
 
 class StreamingReadFile(common.BaseStreamingReadFile):

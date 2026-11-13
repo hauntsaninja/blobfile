@@ -1207,8 +1207,7 @@ def test_cache_dir(ctx):
             f.write(contents)
         with bf.BlobFile(path, mode="rb", streaming=False, cache_dir=cache_dir) as f:
             assert f.read() == contents
-        content_hash = hashlib.md5(contents).hexdigest()
-        cache_path = bf.join(cache_dir, content_hash, bf.basename(path))
+            cache_path = f.name
         with open(cache_path, "rb") as f:
             assert f.read() == contents
         # alter the cached file to make sure we are not re-reading the remote file
@@ -1489,7 +1488,7 @@ def test_composite_objects():
             with tempfile.TemporaryDirectory() as tmpdir:
                 with bf.BlobFile(remote_path, "rb", cache_dir=tmpdir, streaming=False) as f:
                     assert f.read() == contents
-            assert bf.stat(remote_path).md5 == local_md5
+            assert bf.stat(remote_path).md5 is None
 
 
 @pytest.mark.parametrize("ctx", _ALL_PATH_CONTEXTS)
