@@ -416,7 +416,10 @@ def execute_api_request(conf: Config, req: Request) -> "urllib3.BaseHTTPResponse
 
 
 class StreamingReadFile(BaseStreamingReadFile):
-    def __init__(self, conf: Config, path: str, size: int | None) -> None:
+    def __init__(
+        self, conf: Config, path: str, size: int | None, *, version: str | None = None
+    ) -> None:
+        self._version = version
         if size is None:
             st = maybe_stat(conf, path)
             if st is None:
@@ -428,17 +431,25 @@ class StreamingReadFile(BaseStreamingReadFile):
         self, streaming: bool, start: int, end: int | None = None
     ) -> "urllib3.BaseHTTPResponse":
         bucket, name = split_path(self._path)
+        params = {"alt": "media"}
+        if self._version is not None:
+            params["ifGenerationMatch"] = self._version
         req = Request(
             url=build_url("/storage/v1/b/{bucket}/o/{name}", bucket=bucket, name=name),
             method="GET",
-            params=dict(alt="media"),
+            params=params,
             headers={"Range": common.calc_range(start=start, end=end)},
-            success_codes=(206, 416),
+            success_codes=(206, 412, 416),
             # if we are streaming the data, make
             # sure we don't preload it
             preload_content=not streaming,
         )
-        return execute_api_request(self._conf, req)
+        resp = execute_api_request(self._conf, req)
+        if resp.status == 412:
+            raise common.VersionMismatch.create_from_request_response(
+                "GCS object changed during download", req, resp
+            )
+        return resp
 
 
 class StreamingWriteFile(BaseStreamingWriteFile):

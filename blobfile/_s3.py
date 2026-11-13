@@ -69,6 +69,10 @@ def _client(conf: Config, region: str | None = None) -> Any:
     return _make_client(conf, os.getpid(), region)
 
 
+def endpoint_url(conf: Config) -> str:
+    return _client(conf).meta.endpoint_url
+
+
 def _call(operation: Callable[..., Any], path: str, **kwargs: Any) -> Any:
     from botocore.exceptions import ClientError  # pyright: ignore[reportMissingTypeStubs]
 
@@ -179,7 +183,8 @@ def list_blobs(conf: Config, path: str, delimiter: str | None = None) -> Iterato
 
 
 class StreamingReadFile(common.BaseStreamingReadFile):
-    def __init__(self, conf: Config, path: str, size: int | None):
+    def __init__(self, conf: Config, path: str, size: int | None, *, etag: str | None = None):
+        self._etag = etag
         if size is None:
             st = maybe_stat(conf, path)
             if st is None:
@@ -198,8 +203,17 @@ class StreamingReadFile(common.BaseStreamingReadFile):
                 Bucket=bucket,
                 Key=key,
                 Range=common.calc_range(start, end),
+                **({"IfMatch": self._etag} if self._etag is not None else {}),
             )
         except RequestFailure as exc:
+            if exc.response_status == 412:
+                raise common.VersionMismatch(
+                    "S3 object changed during download",
+                    self._path,
+                    exc.response_status,
+                    exc.error,
+                    exc.error_description,
+                ) from exc
             if exc.response_status == 416:
                 return urllib3.response.HTTPResponse(status=416)
             raise

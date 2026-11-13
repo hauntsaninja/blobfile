@@ -92,6 +92,12 @@ There are a few bonus functions:
     * `multiprocessing_start_method="spawn"`: the start method to use when creating processes for parallel work
 * `create_context` - (same arguments as `configure`), creates a new instance of `blobfile` with a custom configuration instead of modifying the global configuration
 
+### Download caching
+
+With `BlobFile(path, "rb", streaming=False, cache_dir=...)`, remote files share a cache keyed by object path and version: ETag for S3 and Azure, and generation for GCS. S3 cache identities also include the service endpoint. Each open checks metadata and reuses the cached file when the version is unchanged, including for multipart uploads and objects without an MD5 checksum. Downloads use conditional reads on every request and publish the cache entry atomically after completion. If a version precondition fails during a download, the open raises `VersionMismatch`; opening again checks the new version.
+
+Caching requires reliable version identifiers and conditional reads. It does not verify cached bytes against a content checksum or write MD5 metadata back to the remote object. Existing MD5-based cache entries are not reused, and the caller remains responsible for cleaning up old cache entries.
+
 ## Authentication
 
 ### Amazon S3
